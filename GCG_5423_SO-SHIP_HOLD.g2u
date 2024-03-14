@@ -1,0 +1,1030 @@
+Program.Sub.Preflight.Start
+'Hooks:
+'11560 Populate Order Entry
+'11811 Post Lines BTN HOOK
+'11945 Order Entry Gab Check Box 1 (Sales Hold)
+'11946 Order Entry Gab Check Box 2 (Radiation Safety Hold)
+v.Global.sOrderNo.Declare
+v.Global.iHook.Declare
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Hook 11560: Populate Hook, Order Entry
+'Hook 11565: Order Selected, Order Entry
+'Hook 11630: Ship International Checkbox, Order Entry
+'Hook 11811: PostLines Btn, Order Entry
+'Hook 11945: GAB Checkbox1, Order Entry
+'Hook 11946: GAB Checkbox2, Order Entry
+'Hook 28530: Shipments Post Save
+'Hook 17342: Quote Won/Loss
+'Hook 11870: Pre Save Header, Order Entry
+'Hook 12511: Post Save Line, Order Entry Line
+'Hook 12231: Post Save Line, Order Entry Line Long
+f.Intrinsic.Control.Try
+
+	f.Intrinsic.Control.If(v.Caller.Hook, >, 0)
+		v.Global.iHook.Set(v.Caller.Hook)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.Control.SelectCase(v.Caller.Hook)			
+		f.Intrinsic.Control.Case(11560)
+			f.Intrinsic.Control.CallSub(loadCustomCheckBoxes)
+			f.Intrinsic.Control.CallSub(checkHoldPermission)
+			f.Intrinsic.Control.If(v.Passed.000003, <>, "")
+				f.Intrinsic.Control.CallSub(loadFields)
+			f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.Case(11565)
+			f.Intrinsic.Control.CallSub(loadFields)
+			f.Intrinsic.Control.CallSub(checkHoldPermission)
+			f.Intrinsic.Control.If(v.Caller.000045, =, "")		
+				f.Intrinsic.Control.CallSub(safetyRadiationHoldAutomatic, passedOrder, v.Passed.000003)
+			f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.Case(11630)
+			f.Intrinsic.Control.CallSub(intShipCheckBox)
+		f.Intrinsic.Control.Case(11811)
+			f.Intrinsic.Control.If(v.Passed.000056, =, "N")
+				f.Intrinsic.Control.CallSub(safetyRadiationHoldAutomatic, passedOrder, v.Passed.000003)
+				f.Intrinsic.Control.CallSub(loadFields)
+			f.Intrinsic.Control.EndIf			
+		f.Intrinsic.Control.Case(11945)
+			f.Intrinsic.Control.CallSub(salesOrderHold)
+			f.Intrinsic.Control.CallSub(loadFields)
+		f.Intrinsic.Control.Case(11946)		
+			f.Intrinsic.Control.If(v.Passed.000056, =, "N")			
+				f.Intrinsic.Control.CallSub(safetyRadiationHold, passedOrder, v.Passed.000003)				
+				f.Intrinsic.Control.CallSub(loadFields)				
+			f.Intrinsic.Control.EndIf					
+		f.Intrinsic.Control.Case(28530)
+			f.Intrinsic.Control.CallSub(holdShipment)
+		f.Intrinsic.Control.Case(17342)
+			f.Intrinsic.Control.CallSub(quoteWon)	
+		f.Intrinsic.Control.Case(11870)
+		
+			f.Intrinsic.Control.If(v.Passed.000056, =, "N")
+				f.Intrinsic.Control.CallSub(radiotionHold, passedOrder, v.Passed.000003)				
+				f.Intrinsic.Control.CallSub(loadFields)		
+			f.Intrinsic.Control.EndIf			
+			
+			f.Intrinsic.Control.CallSub(saveLastUpdate)
+			
+		f.Intrinsic.Control.Case(12511)
+			f.Intrinsic.Control.If(v.Passed.000056, =, "N")
+				f.Intrinsic.Control.CallSub(postLineSave)
+			f.Intrinsic.Control.EndIf		
+		f.Intrinsic.Control.Case(12231)
+			'Long Lines.
+			f.Intrinsic.Control.If(v.Passed.000056, =, "N")
+				f.Intrinsic.Control.CallSub(postLineSave)
+			f.Intrinsic.Control.EndIf		
+	f.Intrinsic.Control.EndSelect
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.ErrorMsg.Start
+v.Local.sError.Declare
+
+'Closes ODBC connection, default to connection : "con"
+f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+	f.ODBC.Connection!con.Close
+f.Intrinsic.Control.EndIf
+
+'Generic Error message.
+f.Intrinsic.String.Build("Project GCG_5423_SO-SHIP_HOLD.g2u {0}{0}Subroutine: {1}{0}Error: {2} with Description: {3}{0}Hook: {4} ", v.Ambient.NewLine, v.Args.CurrentSub, v.Ambient.ErrorNumber, v.Ambient.ErrorDescription, v.Global.iHook, v.Local.sError)
+f.Intrinsic.UI.Msgbox(v.Local.sError)
+Program.Sub.ErrorMsg.End
+
+Program.Sub.loadCustomCheckBoxes.Start
+'Passed  Variables:
+'000031: Bill (WayBill) (19 Characteres)
+'000108: WayBill Lbl  (Entered By:)
+'000045: Order-Sort (Order Sort) (20 Characteres)
+'000117: LBL-Sort (Radiation Safety Hold) (20 Characteres)
+'000073: Order-Sort-2 (Order Sort 2) (20 Characteres)
+'0000116: LBL-Sort-2 (Sales Hold) (20 Characteres)
+v.Local.sTemp.Declare
+
+f.Intrinsic.Control.Try
+	'Loads the Sales Order Checkbox
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-CHK-1, "HIDE", 0)
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-CHK-1, "Lock", 1)
+	f.Intrinsic.Variable.SetProperty("GAB-CHK-1", "PL", 460)
+	f.Intrinsic.Variable.SetProperty("GAB-CHK-1", "PT", 90)
+	f.Intrinsic.Variable.SetProperty("000154", "PW", 65)	
+	'Loads the label for Sales Order Hold
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-1, "HIDE", 0)
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-1, "Lock", 1)
+	f.Intrinsic.Variable.SetProperty("GAB-LBL-1", "PL", 477)
+	f.Intrinsic.Variable.SetProperty("GAB-LBL-1", "PT", 89)
+	f.Intrinsic.Variable.SetProperty("GAB-LBL-1", "PW", 60)	
+	v.Passed.GAB-LBL-1.Set("Sales Hold")
+	
+	'Loads the Radiotion Safety Checkbox
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-CHK-2, "HIDE", 0)
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-CHK-2, "Lock", 1)
+	f.Intrinsic.Variable.SetProperty("GAB-CHK-2", "PL", 540)
+	f.Intrinsic.Variable.SetProperty("GAB-CHK-2", "PT", 90)
+	'Loads the Label for Radiation Safety Hold	
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-2, "HIDE", 0)
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-2, "Lock", 1)
+	f.Intrinsic.Variable.SetProperty("GAB-LBL-2", "PL", 557)
+	f.Intrinsic.Variable.SetProperty("GAB-LBL-2", "PT", 89)
+	f.Intrinsic.Variable.SetProperty("GAB-LBL-2", "PW", 105)	
+	v.Passed.GAB-LBL-2.Set("Radiation Safety Hold")
+	
+	'Loads Gab Custom TextBox and Label
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-3, "HIDE", 0)
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-3, "Lock", 0)
+	f.Intrinsic.Variable.SetProperty("GAB-LBL-3", "PL", 475)
+	f.Intrinsic.Variable.SetProperty("GAB-LBL-3", "PT", 527)
+	v.Passed.GAB-LBL-3.Set("Last Updated By")
+	
+	f.Intrinsic.Variable.SetProperty("000101", "PW", 80)
+	
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-TEXT-1, "HIDE", 0)
+	f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-TEXT-1, "Lock", 1)
+	f.Intrinsic.Variable.SetProperty("GAB-TEXT-1", "PL", 475)
+	f.Intrinsic.Variable.SetProperty("GAB-TEXT-1", "PT", 542)
+	'Locking Textboxes.
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000045, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000073, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000031, "LOCK", 1)
+	'Setting Labels for Textboxes
+	Variable.passed.000117.set("Radiation Safety Hold")
+	Variable.passed.000116.set("Sales Hold")
+	'Variable.passed.000108.set("Entered By:")
+	
+	f.Intrinsic.Control.If(v.Caller.Switches, =, "N")
+		v.Passed.000031.Set(v.Caller.User)
+	f.Intrinsic.Control.EndIf
+	
+	'Variable.passed.000116.set("Sales Hold")
+	Variable.passed.000103.set("Shipping Terms")
+	Function.Intrinsic.Variable.SetProperty("000065","FC",0)
+	Function.Intrinsic.Variable.SetProperty("000065","BC",40188)
+	Function.Intrinsic.Variable.SetProperty("000025","FC",0)
+	Function.Intrinsic.Variable.SetProperty("000025","BC",40188)
+	'Variable.passed.000117.set("Radiation Hold")
+	Variable.passed.000154.set("Credit Hold")
+	Function.Intrinsic.Variable.SetProperty("000154","FC",0)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000154,"TABSTOP", 0)
+	'Variable.passed.000096.set("N")
+	Variable.passed.000048.set("NO TOUCHY!")
+	Function.Intrinsic.Variable.SetProperty("000048","FC",128)
+	Function.Intrinsic.Variable.SetProperty("000048","BC",128)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000048, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000048,"TABSTOP", 0)
+	Function.Intrinsic.Variable.SetProperty("000024","BC",40188)
+	Variable.passed.000106.set("Fedex Option")
+	Variable.passed.000105.set("Other Carriers")
+	Variable.passed.000108.set("Created By")
+	Function.Intrinsic.Variable.SetProperty("000108","FC",0)
+	Function.Intrinsic.Variable.SetProperty("000108","BC",16777215)
+	Function.Intrinsic.Variable.SetProperty("000027","BC",40188)
+	Function.Intrinsic.Variable.SetProperty("000031","BC",16777215)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000020, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000016, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000017, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000018, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000059, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000058, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000057, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000012, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000010, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000008, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000019, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000015, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000014, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000013, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000055, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000053, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000052, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000011, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000009, "LOCK", 1)
+	Function.Intrinsic.UI.ChangeCallerProperty(variable.passed.000007, "LOCK", 1)
+	Function.Intrinsic.Variable.SetProperty("000030","FC",0)
+	Function.Intrinsic.Variable.SetProperty("000030","BC",40188)
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.loadCustomCheckBoxes.End
+
+Program.Sub.checkHoldPermission.Start
+v.Local.bSHoldGroup.Declare
+v.Local.bRSHoldGroup.Declare
+v.Local.bIntShip.Declare
+v.Local.bHolderGroup.Declare
+
+f.Intrinsic.Control.Try
+	'Checks if the user belongs to a specified Group
+	'****************************************************************************************
+								'FOR TESTING ONLY.
+	f.Global.Security.IsInGroup(v.Caller.User, "SHGROUP", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bSHoldGroup.Set(True)
+	f.Intrinsic.Control.EndIf
+	'****************************************************************************************
+	
+	'****************************************************************************************
+								'SALES ORDER HOLD.
+	'****************************************************************************************
+	f.Global.Security.IsInGroup(v.Caller.User, "CS-MGR", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bSHoldGroup.Set(True)
+	f.Intrinsic.Control.EndIf
+	
+	f.Global.Security.IsInGroup(v.Caller.User, "CS-CSR", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bSHoldGroup.Set(True)
+	f.Intrinsic.Control.EndIf
+	
+	f.Global.Security.IsInGroup(v.Caller.User, "SVC-ADMI", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bSHoldGroup.Set(True)
+	f.Intrinsic.Control.EndIf
+	
+	'****************************************************************************************
+							'FOR TESTING ONLY.
+	f.Global.Security.IsInGroup(v.Caller.User, "RSHGROUP", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bRSHoldGroup.Set(True)
+	f.Intrinsic.Control.EndIf
+	'****************************************************************************************	
+
+	'****************************************************************************************
+								'RADIATION SAFETY HOLD.
+	'****************************************************************************************
+	f.Global.Security.IsInGroup(v.Caller.User, "CS-MGR", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bRSHoldGroup.Set(True)
+	f.Intrinsic.Control.EndIf
+	
+	f.Global.Security.IsInGroup(v.Caller.User, "RAD-MGR", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bRSHoldGroup.Set(True)
+	f.Intrinsic.Control.EndIf
+	
+	f.Global.Security.IsInGroup(v.Caller.User, "RAD-TECH", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bRSHoldGroup.Set(True)
+	f.Intrinsic.Control.EndIf
+	
+	f.Global.Security.IsInGroup(v.Caller.User, "CS-INTL", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bRSHoldGroup.Set(True)
+	f.Intrinsic.Control.EndIf
+	
+	'****************************************************************************************
+								'FOR TESTING ONLY.
+	f.Global.Security.IsInGroup(v.Caller.User, "SHGROUP", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bIntShip.Set(True)
+	f.Intrinsic.Control.EndIf
+	'****************************************************************************************
+	
+	'****************************************************************************************
+								'INTERNATIONAL SHIPPING.
+	'****************************************************************************************
+	f.Global.Security.IsInGroup(v.Caller.User, "CS-MGR", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bIntShip.Set(True)
+	f.Intrinsic.Control.EndIf
+	
+	f.Global.Security.IsInGroup(v.Caller.User, "CS-CSR", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bIntShip.Set(True)
+	f.Intrinsic.Control.EndIf
+	
+	f.Global.Security.IsInGroup(v.Caller.User, "SVC-ADMI", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bIntShip.Set(True)
+	f.Intrinsic.Control.EndIf
+	
+	f.Global.Security.IsInGroup(v.Caller.User, "RAD-MGR", v.Caller.CompanyCode, v.Local.bHolderGroup)
+	f.Intrinsic.Control.If(v.Local.bHolderGroup)
+		v.Local.bRSHoldGroup.Set(True)
+	f.Intrinsic.Control.EndIf
+	
+	'Checks both groups, if the user belongs it unlocks check and label.
+	f.Intrinsic.Control.If(v.Local.bSHoldGroup)
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-CHK-1, "Lock", 0)
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-1, "Lock", 0)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-CHK-1, "Lock", 1)
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-1, "Lock", 1)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.Control.If(v.Local.bRSHoldGroup)
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-CHK-2, "Lock", 0)
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-2, "Lock", 0)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-CHK-2, "Lock", 1)
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-2, "Lock", 1)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.Control.If(v.Local.bIntShip)
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.000056, "Lock", 0)
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.000056, "Lock", 0)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.000056, "Lock", 1)
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.000056, "Lock", 1)
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.checkHoldPermission.End
+
+Program.Sub.loadFields.Start
+'000045: Order-Sort (Order Sort) (20 Characteres)
+'000073: Order-Sort-2 (Order Sort 2) (20 Characteres)
+'000031: Bill (WayBill) (19 Characteres)
+
+v.Local.sSQL.Declare
+v.Local.sTemp.Declare
+v.Local.sflag.Declare
+f.Intrinsic.Control.Try
+'Gets a 7 character Order No
+	f.Intrinsic.String.LPad(v.Passed.000003, "0", 7, v.Global.sOrderNo)
+	
+	f.Intrinsic.Control.If(v.Caller.Switches, =, "O")
+		f.Intrinsic.Control.If(v.Passed.000031, =, "")
+			'f.Intrinsic.Control.CallSub()
+			f.Intrinsic.Control.If(v.Passed.000056, =, "N")
+				f.Intrinsic.Control.CallSub(safetyRadiationHoldAutomatic, passedOrder, v.Passed.000003)
+			f.Intrinsic.Control.EndIf
+			f.Intrinsic.Control.CallSub(quoteWonNoTransaction)
+			v.Passed.000031.Set(v.Caller.User)
+			
+		f.Intrinsic.Control.EndIf
+		
+		f.Intrinsic.String.Split(v.Passed.000031, "-", v.Local.sTemp)
+		v.Local.sTemp.RedimPreserve(0, 1)
+		v.Passed.000031.Set(v.Local.sTemp(0))
+		v.Passed.GAB-TEXT-1.Set(v.Local.sTemp(1))
+		f.Intrinsic.Control.EndIf	
+		
+	'Closes ODBC connection, default to connection : "con"
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+	
+	'Closes ODBC connection, default to connection : "con"
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+
+	f.ODBC.Connection!con.OpenCompanyConnection
+		f.Intrinsic.String.Build("Select Order_no, record_no, Record_type, order_sort_2, code_sort, way_bill, User_1, shp_hld_flag from Order_Header Where Order_No = '{0}' and Record_no = '  A' and Record_Type = 'A'", v.Global.sOrderNo, v.Local.sSQL)
+		f.Data.DataTable.CreateFromSQL("orderHeaderDT", "con", v.Local.sSQL)
+			'Get the Hold Flags Values.
+			f.Intrinsic.Control.If(v.DataTable.orderHeaderDT.RowCount, =, 1)
+				v.Passed.000045.Set(v.DataTable.orderHeaderDT(0).code_sort!FieldValTrim)
+				v.Passed.000073.Set(v.DataTable.orderHeaderDT(0).order_sort_2!FieldValTrim)
+				'v.Passed.000031.Set(v.DataTable.orderHeaderDT(0).way_bill!FieldValTrim)
+				'v.Passed.GAB-TEXT-1.Set(v.DataTable.orderHeaderDT(0).User_1!FieldValTrim)
+				v.Local.sflag.Set(v.DataTable.orderHeaderDT(0).shp_hld_flag!FieldValTrim)
+				'Set the textbox and checkbox for Radiation Safety Hold
+			'	f.Intrinsic.Control.If(v.Passed.000056, =, Y)
+					f.Intrinsic.Control.If(v.Passed.000045, =, "***HOLD***")
+						v.Passed.GAB-CHK-2.Set("Y")
+					f.Intrinsic.Control.ElseIf(v.Passed.000045, =, "***CLEARED***")
+						v.Passed.GAB-CHK-2.Set("N")
+					f.Intrinsic.Control.ElseIf(v.Passed.000045, =, "")
+						v.Passed.GAB-CHK-2.Set("N")
+					f.Intrinsic.Control.EndIf
+				'f.Intrinsic.Control.EndIf
+				'Set the textbox and checkbox for Sales Hold
+				f.Intrinsic.Control.If(v.Passed.000073, =, "***SALES HOLD***")
+					v.Passed.GAB-CHK-1.Set("Y")
+				f.Intrinsic.Control.ElseIf(v.Passed.000073, =, " ")
+					v.Passed.GAB-CHK-1.Set("N")
+				f.Intrinsic.Control.ElseIf(v.Passed.000073, =, "")
+					v.Passed.GAB-CHK-1.Set("N")
+				f.Intrinsic.Control.EndIf
+				
+				f.Intrinsic.Control.If(v.Local.sflag, =, "02")
+					v.Passed.000096.Set("Y")
+				f.Intrinsic.Control.EndIf
+				
+				f.Intrinsic.Control.If(v.Local.sflag, =, "04")
+					v.Passed.000096.Set("Y")
+				f.Intrinsic.Control.EndIf
+				
+				f.Intrinsic.Control.If(v.Local.sflag, =, "01")
+					v.Passed.000096.Set("N")
+				f.Intrinsic.Control.EndIf
+				
+				f.Intrinsic.Control.If(v.Local.sflag, =, "")
+					v.Passed.000096.Set("N")
+				f.Intrinsic.Control.EndIf
+				
+			f.Intrinsic.Control.EndIf			
+		f.Data.DataTable.Close("orderHeaderDT")
+	f.ODBC.Connection!con.Close	
+	
+
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.loadFields.End
+
+Program.Sub.safetyRadiationHoldAutomatic.Start
+v.Local.sSQL.Declare
+v.Local.sFilter.Declare
+v.Local.iCnt.Declare
+v.Local.bPartExists.Declare
+v.Local.sTemp.Declare
+
+f.Intrinsic.Control.Try
+	'Gets a 7 character Order No
+	f.Intrinsic.String.LPad(v.Args.passedOrder, "0", 7, v.Global.sOrderNo)
+	'v.Global.sOrderNo.Set("0000041")
+	'Closes ODBC connection, default to connection : "con"
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.Control.If(v.Passed.000056, =, "Y")
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!con.OpenCompanyConnection
+		
+		'Gets Header Order
+		f.Intrinsic.String.Build("Select order_no, flag_intl_ship from V_ORDER_SHIP_TO where Order_No = '{0}'", v.Global.sOrderNo, v.Local.sSQL)
+		f.Data.DataTable.CreateFromSQL("orderShipDT", "con", v.Local.sSQL, true)
+
+		f.Intrinsic.Control.If(v.DataTable.orderShipDT.RowCount, =, 1)
+			v.Local.sTemp.Set(v.DataTable.orderShipDT(0).flag_intl_ship!FieldValTrim)
+			f.Intrinsic.Control.If(v.Local.sTemp, =, "Y")
+				f.Intrinsic.Control.ExitSub
+			f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.EndIf
+		f.Data.DataTable.Close("orderShipDT")
+		
+		'Gets all the lines 
+		f.Intrinsic.String.Build("Select Order_no, Part, Record_no, record_type, Location from V_Order_Lines where Order_No = '{0}'", v.Global.sOrderNo, v.Local.sSQL)
+		f.Data.DataTable.CreateFromSQL("orderLinesDT", "con", v.Local.sSQL, true)
+		'Loops through all the lines of the matching Sales Order.
+		f.Intrinsic.Control.For(v.Local.iCnt, 0, v.DataTable.orderLinesDT.RowCount--, 1)
+			f.Intrinsic.String.Build("Select PART, HM_FLAG from V_INVENTORY_MST3 where PART = '{0}' and Location = '{1}'", v.DataTable.orderLinesDT(v.Local.iCnt).PART!FieldVal, v.DataTable.orderLinesDT(v.Local.iCnt).Location!FieldVal, v.Local.sSQL)
+			f.Data.DataTable.CreateFromSQL("partDT", "con", v.Local.sSQL, true)
+			'Gets and checks if the part exists and if the HM flag is marked as Y
+			f.Intrinsic.Control.If(v.DataTable.partDT.RowCount, =, 1)
+				f.Intrinsic.Control.If(v.DataTable.partDT(0).HM_FLAG!FieldValTrim, =, "Y")
+				
+					'Exception, Need to look for a dynamic way to this.
+					f.Intrinsic.Control.If(v.DataTable.partDT(0).Part!FieldValTrim, =, "4590")
+						f.Data.DataTable.Close("partDT")
+						f.Data.DataTable.Close("orderLinesDT")
+						f.ODBC.Connection!con.Close
+						f.Intrinsic.Control.ExitSub
+					f.Intrinsic.Control.EndIf
+					
+					f.Intrinsic.String.Build("Select Order_no, record_no, Record_type, order_sort_2, code_sort from Order_Header Where Order_No = '{0}' and Record_no = '  A' and Record_Type = 'A'", v.Global.sOrderNo, v.Local.sSQL)
+					f.Data.DataTable.CreateFromSQL("orderHeaderDT", "con", v.Local.sSQL)
+						'If there's a Radioactive part, checks if it the order is marked as "***CLEARED***" means that it was flag to hold and then cleared, not need to reflag.
+						f.Intrinsic.Control.If(v.DataTable.orderHeaderDT(0).code_sort!FieldValTrim, =, "***CLEARED***")
+						'Do nothing
+						
+						f.Intrinsic.Control.Else
+							f.Intrinsic.String.Build("Update Order_Header Set code_sort = '***HOLD***', way_bill = '{0}' Where Order_No = '{1}' and Record_no = '  A' and Record_Type = 'A'", v.Passed.000031, v.Global.sOrderNo, v.Local.sSQL)
+							f.ODBC.Connection!con.Execute(v.Local.sSQL)	
+							v.Local.bPartExists.Set(true)
+						f.Intrinsic.Control.EndIf					
+					f.Data.DataTable.Close("orderHeaderDT")
+				f.Intrinsic.Control.EndIf
+			f.Intrinsic.Control.EndIf
+			f.Data.DataTable.Close("partDT")
+		f.Intrinsic.Control.Next(v.Local.iCnt)
+		
+'		f.Intrinsic.Control.If(v.Local.bPartExists, =, False)
+'			f.Intrinsic.String.Build("Update Order_Header Set code_sort = '', way_bill = '{0}' Where Order_No = '{1}' and Record_no = '  A' and Record_Type = 'A'", v.Passed.000031, v.Global.sOrderNo, v.Local.sSQL)
+'			f.ODBC.Connection!con.Execute(v.Local.sSQL)
+'		f.Intrinsic.Control.EndIf
+		
+	f.Data.DataTable.Close("orderLinesDT")
+	f.ODBC.Connection!con.Close				
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.safetyRadiationHoldAutomatic.End
+
+Program.Sub.safetyRadiationHold.Start
+v.Local.sSQL.Declare
+v.Local.sFilter.Declare
+v.Local.iCnt.Declare
+v.Local.bPartExists.Declare
+v.Local.sTemp.Declare
+
+f.Intrinsic.Control.Try
+	'Gets a 7 character Order No
+	f.Intrinsic.String.LPad(v.Args.passedOrder, "0", 7, v.Global.sOrderNo)
+	'v.Global.sOrderNo.Set("0000041")
+	'Closes ODBC connection, default to connection : "con"
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.Control.If(v.Passed.000056, =, "Y")
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!con.OpenCompanyConnection
+		
+		'Gets Header Order
+		f.Intrinsic.String.Build("Select order_no, flag_intl_ship from V_ORDER_SHIP_TO where Order_No = '{0}'", v.Global.sOrderNo, v.Local.sSQL)
+		f.Data.DataTable.CreateFromSQL("orderShipDT", "con", v.Local.sSQL, true)
+
+		f.Intrinsic.Control.If(v.DataTable.orderShipDT.RowCount, =, 1)
+			v.Local.sTemp.Set(v.DataTable.orderShipDT(0).flag_intl_ship!FieldValTrim)
+			f.Intrinsic.Control.If(v.Local.sTemp, =, "Y")
+				f.Intrinsic.Control.ExitSub
+			f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.EndIf
+		f.Data.DataTable.Close("orderShipDT")
+		
+		'Gets all the lines 
+		f.Intrinsic.String.Build("Select Order_no, Part, Record_no, record_type, Location from V_Order_Lines where Order_No = '{0}'", v.Global.sOrderNo, v.Local.sSQL)
+		f.Data.DataTable.CreateFromSQL("orderLinesDT", "con", v.Local.sSQL, true)
+		'Loops through all the lines of the matching Sales Order.
+		f.Intrinsic.Control.For(v.Local.iCnt, 0, v.DataTable.orderLinesDT.RowCount--, 1)
+			f.Intrinsic.String.Build("Select PART, HM_FLAG from V_INVENTORY_MST3 where PART = '{0}' and Location = '{1}'", v.DataTable.orderLinesDT(v.Local.iCnt).PART!FieldVal, v.DataTable.orderLinesDT(v.Local.iCnt).Location!FieldVal, v.Local.sSQL)
+			f.Data.DataTable.CreateFromSQL("partDT", "con", v.Local.sSQL, true)
+			'Gets and checks if the part exists and if the HM flag is marked as Y
+			f.Intrinsic.Control.If(v.DataTable.partDT.RowCount, =, 1)
+				f.Intrinsic.Control.If(v.DataTable.partDT(0).HM_FLAG!FieldValTrim, =, "Y")
+				
+					'Exception, Need to look for a dynamic way to this.
+					f.Intrinsic.Control.If(v.DataTable.partDT(0).Part!FieldValTrim, =, "4590")
+						f.Data.DataTable.Close("partDT")
+						f.Data.DataTable.Close("orderLinesDT")
+						
+						f.Intrinsic.Control.If(v.Passed.GAB-CHK-2, = , "N")
+							f.Intrinsic.String.Build("Update Order_Header Set code_sort = '***CLEARED***', way_bill = '{0}' Where Order_No = '{1}' and Record_no = '  A' and Record_Type = 'A'", v.Passed.000031, v.Global.sOrderNo, v.Local.sSQL)
+							f.ODBC.Connection!con.Execute(v.Local.sSQL)
+						f.Intrinsic.Control.EndIf
+		
+						f.ODBC.Connection!con.Close
+						f.Intrinsic.Control.ExitSub
+					f.Intrinsic.Control.EndIf
+					
+					f.Intrinsic.String.Build("Select Order_no, record_no, Record_type, order_sort_2, code_sort from Order_Header Where Order_No = '{0}' and Record_no = '  A' and Record_Type = 'A'", v.Global.sOrderNo, v.Local.sSQL)
+					f.Data.DataTable.CreateFromSQL("orderHeaderDT", "con", v.Local.sSQL)
+						'If there's a Radioactive part, checks if it the order is marked as "***CLEARED***" means that it was flag to hold and then cleared, not need to reflag.
+							
+							f.Intrinsic.String.Build("Update Order_Header Set code_sort = '***HOLD***', way_bill = '{0}' Where Order_No = '{1}' and Record_no = '  A' and Record_Type = 'A'", v.Passed.000031, v.Global.sOrderNo, v.Local.sSQL)
+							f.ODBC.Connection!con.Execute(v.Local.sSQL)	
+							v.Local.bPartExists.Set(true)
+							
+					f.Data.DataTable.Close("orderHeaderDT")
+				f.Intrinsic.Control.EndIf
+			f.Intrinsic.Control.EndIf
+			f.Data.DataTable.Close("partDT")
+		f.Intrinsic.Control.Next(v.Local.iCnt)
+		
+		f.Intrinsic.Control.If(v.Passed.GAB-CHK-2, = , "N")
+			f.Intrinsic.String.Build("Update Order_Header Set code_sort = '***CLEARED***', way_bill = '{0}' Where Order_No = '{1}' and Record_no = '  A' and Record_Type = 'A'", v.Passed.000031, v.Global.sOrderNo, v.Local.sSQL)
+			f.ODBC.Connection!con.Execute(v.Local.sSQL)
+		f.Intrinsic.Control.EndIf
+'		f.Intrinsic.Control.If(v.Local.bPartExists, =, False)
+'			f.Intrinsic.String.Build("Update Order_Header Set code_sort = '', way_bill = '{0}' Where Order_No = '{1}' and Record_no = '  A' and Record_Type = 'A'", v.Passed.000031, v.Global.sOrderNo, v.Local.sSQL)
+'			f.ODBC.Connection!con.Execute(v.Local.sSQL)
+'		f.Intrinsic.Control.EndIf
+		
+	f.Data.DataTable.Close("orderLinesDT")
+	f.ODBC.Connection!con.Close				
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.safetyRadiationHold.End
+
+Program.Sub.radiotionHold.Start
+v.Local.sSQL.Declare
+v.Local.sRet.Declare
+f.Intrinsic.Control.Try
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+	f.ODBC.Connection!con.OpenCompanyConnection
+		'Gets a 7 character Order No
+		f.Intrinsic.String.LPad(v.Passed.000003, "0", 7, v.Global.sOrderNo)
+		
+		f.Intrinsic.Control.If(v.Passed.000056, =, "Y")
+			f.ODBC.Connection!con.Close
+			f.Intrinsic.Control.ExitSub
+		f.Intrinsic.Control.EndIf
+		
+		v.Local.sRet.Set("")
+		f.Intrinsic.String.Build("Select HM_Flag from Inventory_Mst3 where HM_Flag = 'Y' and Part+Location in (Select Part+Location from V_Order_Lines where Order_No = '{0}' and Part <> '4590')", v.Global.sOrderNo, v.Local.sSQL)
+		f.ODBC.Connection!con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		
+		f.Intrinsic.Control.If(v.Local.sRet.Trim, <>, "")
+			f.Intrinsic.String.Build("Update Order_Header Set code_sort = '***HOLD***', way_bill = '{0}' Where Order_No = '{1}' and Record_no = '  A' and Record_Type = 'A'", v.Passed.000031, v.Global.sOrderNo, v.Local.sSQL)
+			f.ODBC.Connection!con.Execute(v.Local.sSQL)
+		f.Intrinsic.Control.EndIf		
+	f.ODBC.Connection!con.Close
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.radiotionHold.End
+
+Program.Sub.salesOrderHold.Start
+v.Local.sSQL.Declare
+v.Local.bSalesHold.Declare
+
+f.Intrinsic.Control.Try
+	'Gets a 7 character Order No
+	f.Intrinsic.String.LPad(v.Passed.000003, "0", 7, v.Global.sOrderNo)
+	'v.Global.sOrderNo.Set("0000041")
+	f.Intrinsic.Control.If(v.Passed.GAB-CHK-1, =, "Y")
+		v.Local.bSalesHold.Set(true)
+	f.Intrinsic.Control.ElseIf(v.Passed.GAB-CHK-1, =, "N")
+		v.Local.bSalesHold.Set(false)
+	f.Intrinsic.Control.EndIf
+	
+		'Closes ODBC connection, default to connection : "con"
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+	
+'	f.Intrinsic.Control.If(v.Passed.000056, =, "N")	
+		f.ODBC.Connection!con.OpenCompanyConnection
+			f.Intrinsic.Control.If(v.Local.bSalesHold)
+				f.Intrinsic.String.Build("Update Order_Header Set order_sort_2 = '***SALES HOLD***', way_bill = '{0}' Where Order_No = '{1}' and Record_no = '  A' and Record_Type = 'A'", v.Passed.000031, v.Global.sOrderNo, v.Local.sSQL)
+				f.ODBC.Connection!con.Execute(v.Local.sSQL)
+			f.Intrinsic.Control.Else
+				f.Intrinsic.String.Build("Update Order_Header Set order_sort_2 = '', way_bill = '{0}' Where Order_No = '{1}' and Record_no = '  A' and Record_Type = 'A'", v.Passed.000031, v.Global.sOrderNo, v.Local.sSQL)
+				f.ODBC.Connection!con.Execute(v.Local.sSQL)			
+			f.Intrinsic.Control.EndIf
+		f.ODBC.Connection!con.Close	
+'	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.salesOrderHold.End
+
+Program.Sub.holdShipment.Start
+v.Local.sSQL.Declare
+v.Local.sMSG.Declare
+v.Local.bShippingHold.Declare
+
+f.Intrinsic.Control.Try
+	'Gets a 7 character Order No
+	'f.Intrinsic.String.LPad(v.Passed.000003, "0", 7, v.Global.sOrderNo)
+	v.Global.sOrderNo.Set(v.Passed.FIRST-ORDER)
+	
+	'Closes ODBC connection, default to connection : "con"
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!con.OpenCompanyConnection
+		f.Intrinsic.String.Build("Select Order_no, record_no, Record_type, order_sort_2, code_sort, way_bill from Order_Header Where Order_No = '{0}' and Record_no = '  A' and Record_Type = 'A'", v.Global.sOrderNo, v.Local.sSQL)
+		f.Data.DataTable.CreateFromSQL("orderHeaderDT", "con", v.Local.sSQL)
+			f.Intrinsic.Control.If(v.DataTable.orderHeaderDT.RowCount, =, 1)
+				f.Intrinsic.Control.If(v.DataTable.orderHeaderDT(0).Code_Sort!FieldValTrim, =, "***HOLD***")
+					v.Local.bShippingHold.Set(True)
+				f.Intrinsic.Control.ElseIf(v.DataTable.orderHeaderDT(0).Order_Sort_2!FieldValTrim, =, "***SALES HOLD***")
+					v.Local.bShippingHold.Set(True)
+				f.Intrinsic.Control.Else
+					v.Local.bShippingHold.Set(False)
+				f.Intrinsic.Control.EndIf
+			f.Intrinsic.Control.EndIf
+		f.Data.DataTable.Close("orderHeaderDT")
+	f.ODBC.Connection!con.Close
+	
+	f.Intrinsic.Control.If(v.Local.bShippingHold)
+		v.Passed.777777.Set(1)
+		f.Intrinsic.String.Build("The order: {0} is either on Sales Hold or Radiation Safety Hold.{1}Please Remove the holds to be able to ship this order.", v.Global.sOrderNo, v.Ambient.NewLine, v.Local.sMSG)
+		f.Intrinsic.UI.Msgbox(v.Local.sMSG, "Order on Hold", 1)
+		'v.Passed.777777.Set(1)
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.holdShipment.End
+
+Program.Sub.intShipCheckBox.Start
+f.Intrinsic.Control.Try
+
+	f.Intrinsic.Control.If(v.Passed.000056, =, "Y")
+		v.Passed.GAB-CHK-2.Set("N")
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-CHK-2, "Lock", 1)
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-2, "Lock", 1)
+		'Maybe
+		f.Intrinsic.Control.CallSub(safetyRadiationHold)
+	f.Intrinsic.Control.ElseIf(v.Passed.000056, = "N")
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-CHK-2, "Lock", 0)
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.GAB-LBL-2, "Lock", 0)		
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.intShipCheckBox.End
+
+Program.Sub.saveLastUpdate.Start
+v.Local.sSQL.Declare
+v.Local.sTemp.Declare
+
+f.Intrinsic.Control.Try
+
+	'Closes ODBC connection, default to connection : "con"
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+
+	f.ODBC.Connection!con.OpenCompanyConnection
+		f.Intrinsic.String.Build("{0}-{1}", v.Passed.000031, v.Caller.User, v.Local.sTemp)
+		v.Passed.000031.Set(v.Local.sTemp)
+		v.Passed.GAB-TEXT-1.Set("")
+		f.Intrinsic.String.LPad(v.Passed.000003, "0", 7, v.Global.sOrderNo)		
+		f.Intrinsic.String.Build("Update ORDER_HEADER Set WAY_BILL = '{0}' where Order_No = '{1}' and Record_No = '  A'", v.Local.sTemp, v.Global.sOrderNo, v.Local.sSQL)
+		f.ODBC.Connection!con.Execute(v.Local.sSQL)
+	f.ODBC.Connection!con.Close
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.saveLastUpdate.End
+
+Program.Sub.quoteWon.Start
+v.Local.sSQL.Declare
+v.Local.iCnt.Declare
+v.Local.sOrder_no.Declare
+f.Intrinsic.Control.Try
+	f.Intrinsic.String.Build("select * from V_ORDER_HEADER where quote = '{0}'", v.Passed.000002, v.Local.sSQL)
+	
+	'Closes ODBC connection, default to connection : "con"
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!con.OpenCompanyConnection
+		f.Data.DataTable.CreateFromSQL("customerMasterDT", "con", "select customer, credit from v_CUSTOMER_MASTER")
+		f.Data.DataTable.CreateFromSQL("creditLimitDT", "con", "select * from v_AR_credit_limit")
+		f.Data.DataTable.CreateFromSQL("customerSales", "con", "select customer, AMT_OPEN_ORDERS  from v_CUSTOMER_SALES")
+		'f.Data.DataTable.CreateFromSQL("shipHoldDT", "con", "select order_no, shp_hld_flag from v_order_header")
+	f.ODBC.Connection!con.Close
+	
+	'Closes ODBC connection, default to connection : "con"
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!con.OpenCompanyConnection
+		f.Data.DataTable.CreateFromSQL("quoteWonDT", "con", v.Local.sSQL)
+		f.Data.DataView.Create("quoteWonDT", "quoteWonDV", 22, "Way_bill = ''", "")
+			f.Intrinsic.Control.If(v.DataTable.quoteWonDT.RowCount, >, 0)
+				f.Intrinsic.Control.For(v.Local.iCnt, 0, v.DataView.quoteWonDT!quoteWonDV.RowCount--, 1)	
+					v.Local.sOrder_no.Set(v.DataView.quoteWonDT!quoteWonDV(v.Local.iCnt).Order_no!FieldValTrim)
+					f.Intrinsic.String.Build("Update ORDER_HEADER Set Way_Bill = '{0}' Where Quote = '{1}'  and Record_No = '  A' and Order_No = '{2}'", v.Caller.User, v.Passed.000002, v.Local.sOrder_no, v.Local.sSQL)
+					f.ODBC.Connection!con.Execute(v.Local.sSQL)
+				
+					f.Intrinsic.String.Build("Customer = '{0}'", v.Passed.000006, v.Local.sFilter)
+					f.Data.DataView.Create("customerMasterDT", "customerMasterDV", 22, v.Local.sFilter, "")
+					
+					f.Intrinsic.String.Build("Customer = '{0}'", v.Passed.000006, v.Local.sFilter)
+					f.Data.DataView.Create("customerSalesDT", "customerSalesDV", 22, v.Local.sFilter, "")
+					
+					f.Intrinsic.Control.If(v.DataView.customerMasterDT!customerMasterDV.RowCount, =, 1)
+						v.Local.sCreditID.Set(v.DataView.customerMasterDT!customerMasterDV(0).Credit!FieldValTrim)
+						f.Intrinsic.String.Build("Credit_Code = '{0}'", v.Local.sCreditID, v.Local.sFilter)
+						f.Data.DataView.Create("creditLimitDT", "creditLimitDV", 22, v.Local.sFilter, "")
+							
+						f.Intrinsic.Control.If(v.DataView.creditLimitDT!creditLimitDV.RowCount, =, 1)
+							v.Local.fCreditLimit.Set(v.DataView.creditLimitDT!creditLimitDV(0).Credit_Amount!FieldVal)
+							f.Intrinsic.Control.If(v.DataView.customerSalesDT!customerSalesDT.RowCount, =, 1)
+								v.Local.fCurrentCreditUse.Set(v.DataView.customerSalesDT!customerSalesDT(0).AMT_OPEN_ORDERS!FieldVal)
+								f.Intrinsic.Control.If(v.Local.fCurrentCreditUse, >=, v.Local.fCreditLimit)
+									v.Local.sOrder_no.Set(v.DataView.quoteWonDT!quoteWonDV(v.Local.iCnt).Order_no!FieldValTrim)
+									f.Intrinsic.String.Build("Update ORDER_HEADER Set shp_hld_flag = '02' Where Quote = '{0}'  and Record_No = '  A' and Order_No = '{1}'", v.Local.sQuote, v.Local.sOrder_no, v.Local.sSQL)
+									f.ODBC.Connection!con.Execute(v.Local.sSQL)
+								f.Intrinsic.Control.EndIf								
+							f.Intrinsic.Control.EndIf
+						f.Intrinsic.Control.EndIf							
+							
+						f.Data.DataView.Close("creditLimitDT", "creditLimitDV")
+						f.Data.DataTable.Close("creditLimitDT")
+					f.Intrinsic.Control.EndIf
+							
+					f.Data.DataView.Close("customerMasterDT", "customerMasterDV")
+					f.Data.DataTable.Close("customerMasterDT")
+					f.Data.DataView.Close("customerSalesDT", "customerSalesDV")
+					f.Data.DataTable.Close("customerSalesDT")
+				f.Intrinsic.Control.Next(v.Local.iCnt)
+			f.Intrinsic.Control.EndIf
+		f.Data.DataTable.Close("quoteWonDT")
+	f.ODBC.Connection!con.Close
+	
+	f.Intrinsic.Control.If(v.Passed.000056, =, "N")
+				f.Intrinsic.Control.CallSub(safetyRadiationHoldAutomatic, passedOrder, v.Local.sOrder_no)
+	f.Intrinsic.Control.EndIf
+
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.quoteWon.End
+
+Program.Sub.quoteWonNoTransaction.Start
+v.Local.sQuote.Declare
+v.Local.sCustomer.Declare
+v.Local.sSQL.Declare
+v.Local.sFilter.Declare
+v.Local.sCreditID.Declare
+v.Local.fCreditLimit.Declare
+v.Local.fCurrentCreditUse.Declare
+v.Local.iCnt.Declare
+v.Local.sOrder_no.Declare
+v.Local.sTemp.Declare
+
+
+f.Intrinsic.Control.Try
+	f.Intrinsic.String.LPad(v.Passed.000003, "0", 7, v.Local.sOrder_no)
+	f.Intrinsic.String.Build("select * from V_ORDER_HEADER where Order_no = '{0}'", v.Local.sOrder_no, v.Local.sSQL)
+
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!con.OpenCompanyConnection
+		f.Data.DataTable.CreateFromSQL("customerMasterDT", "con", "select customer, credit from v_CUSTOMER_MASTER")
+		f.Data.DataTable.CreateFromSQL("creditLimitDT", "con", "select * from v_AR_credit_limit")
+		f.Data.DataTable.CreateFromSQL("customerSalesDT", "con", "select customer, AMT_OPEN_ORDERS  from v_CUSTOMER_SALES")
+		'f.Data.DataTable.CreateFromSQL("shipHoldDT", "con", "select order_no, shp_hld_flag from v_order_header")
+	f.ODBC.Connection!con.Close
+	
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+
+	f.ODBC.Connection!con.OpenCompanyConnection
+		f.Data.DataTable.CreateFromSQL("quoteWonDT", "con", v.Local.sSQL)
+		f.Data.DataView.Create("quoteWonDT", "quoteWonDV", 22, "Way_bill = ''", "")
+			f.Intrinsic.Control.If(v.DataTable.quoteWonDT.RowCount, >, 0)
+				f.Intrinsic.Control.For(v.Local.iCnt, 0, v.DataView.quoteWonDT!quoteWonDV.RowCount--, 1)	
+					'v.Local.sOrder_no.Set(v.DataView.quoteWonDT!quoteWonDV(v.Local.iCnt).Order_no!FieldValTrim)
+					'f.Intrinsic.String.Build("Update ORDER_HEADER Set Way_Bill = '{0}' Where Quote = '{1}'  and Record_No = '  A' and Order_No = '{2}'", v.Caller.User, v.Local.sQuote, v.Local.sOrder_no, v.Local.sSQL)
+					'f.ODBC.Connection!con.Execute(v.Local.sSQL)
+				
+					f.Intrinsic.String.Build("Customer = '{0}'", v.Passed.000006, v.Local.sFilter)
+					f.Data.DataView.Create("customerMasterDT", "customerMasterDV", 22, v.Local.sFilter, "")
+					
+					f.Intrinsic.String.Build("Customer = '{0}'", v.Passed.000006, v.Local.sFilter)
+					f.Data.DataView.Create("customerSalesDT", "customerSalesDV", 22, v.Local.sFilter, "")
+					
+					f.Intrinsic.Control.If(v.DataView.customerMasterDT!customerMasterDV.RowCount, =, 1)
+						v.Local.sCreditID.Set(v.DataView.customerMasterDT!customerMasterDV(0).Credit!FieldValTrim)
+						f.Intrinsic.String.Build("Credit_Code = '{0}'", v.Local.sCreditID, v.Local.sFilter)
+						f.Data.DataView.Create("creditLimitDT", "creditLimitDV", 22, v.Local.sFilter, "")
+							
+						f.Intrinsic.Control.If(v.DataView.creditLimitDT!creditLimitDV.RowCount, =, 1)
+							v.Local.fCreditLimit.Set(v.DataView.creditLimitDT!creditLimitDV(0).Credit_Amount!FieldVal)
+							f.Intrinsic.Control.If(v.DataView.customerSalesDT!customerSalesDV.RowCount, =, 1)
+								v.Local.fCurrentCreditUse.Set(v.DataView.customerSalesDT!customerSalesDV(0).AMT_OPEN_ORDERS!FieldVal)
+								
+								f.Intrinsic.Control.If(v.Local.fCurrentCreditUse, >=, v.Local.fCreditLimit)
+									
+									'check if shp_hld_flag is empty 
+								
+									v.Local.sOrder_no.Set(v.DataView.quoteWonDT!quoteWonDV(v.Local.iCnt).Order_no!FieldValTrim)
+									
+									f.Intrinsic.String.Build("Select Order_No,  shp_hld_flag from V_Order_Header Where Order_No = '{0}'  and Record_No = '  A' ", v.Local.sOrder_no, v.Local.sSQL)
+									f.Data.DataTable.CreateFromSQL("orderShip2DT", "con", v.Local.sSQL)
+									f.Intrinsic.Control.If(v.DataTable.orderShip2DT.RowCount, =, 1)
+										v.Local.sTemp.Set(v.DataTable.orderShip2DT(0).shp_hld_flag!FieldValTrim)
+										f.Intrinsic.Control.If(v.Local.sTemp, =, "")
+											f.Intrinsic.String.Build("Update ORDER_HEADER Set shp_hld_flag = '02' Where Order_No = '{0}'  and Record_No = '  A' ", v.Local.sOrder_no, v.Local.sSQL)
+											f.ODBC.Connection!con.Execute(v.Local.sSQL)
+										f.Intrinsic.Control.EndIf
+									f.Intrinsic.Control.EndIf
+									f.Data.DataTable.Close("orderShip2DT")										
+									'check ship to check box on the screen aswell.
+								f.Intrinsic.Control.EndIf								
+							f.Intrinsic.Control.EndIf
+						f.Intrinsic.Control.EndIf							
+							
+						f.Data.DataView.Close("creditLimitDT", "creditLimitDV")
+						
+					f.Intrinsic.Control.Elseif(v.DataView.creditLimitDT!creditLimitDV.RowCount, =, 0)
+						v.Local.fCreditLimit.Set(v.Passed.000166)
+						v.Local.fCurrentCreditUse.Set(v.Passed.008000)
+						
+						f.Intrinsic.Control.If(v.Local.fCurrentCreditUse, >=, v.Local.fCreditLimit)
+							
+							'check if shp_hld_flag is empty 
+						
+							v.Local.sOrder_no.Set(v.DataView.quoteWonDT!quoteWonDV(v.Local.iCnt).Order_no!FieldValTrim)
+							
+							f.Intrinsic.String.Build("Select Order_No,  shp_hld_flag from V_Order_Header Where Order_No = '{0}'  and Record_No = '  A' ", v.Local.sOrder_no, v.Local.sSQL)
+							f.Data.DataTable.CreateFromSQL("orderShip2DT", "con", v.Local.sSQL)
+							f.Intrinsic.Control.If(v.DataTable.orderShip2DT.RowCount, =, 1)
+								v.Local.sTemp.Set(v.DataTable.orderShip2DT(0).shp_hld_flag!FieldValTrim)
+								f.Intrinsic.Control.If(v.Local.sTemp, =, "")
+									f.Intrinsic.String.Build("Update ORDER_HEADER Set shp_hld_flag = '02' Where Order_No = '{0}'  and Record_No = '  A' ", v.Local.sOrder_no, v.Local.sSQL)
+									f.ODBC.Connection!con.Execute(v.Local.sSQL)
+								f.Intrinsic.Control.EndIf
+							f.Intrinsic.Control.EndIf
+							f.Data.DataTable.Close("orderShip2DT")										
+							'check ship to check box on the screen aswell.
+						f.Intrinsic.Control.EndIf	
+					f.Intrinsic.Control.EndIf
+							
+					f.Data.DataView.Close("customerMasterDT", "customerMasterDV")
+					f.Data.DataView.Close("customerSalesDT", "customerSalesDV")
+				f.Intrinsic.Control.Next(v.Local.iCnt)
+			f.Intrinsic.Control.EndIf
+		f.Data.DataTable.Close("quoteWonDT")
+	f.ODBC.Connection!con.Close
+	
+'	f.Intrinsic.String.Build("Customer = '{0}'", v.Passed.000006, v.Local.sFilter)
+'	f.Data.DataView.Create("customerMasterDT", "customerMasterDV", 22, v.Local.sFilter, "")
+	
+	f.Intrinsic.Control.If(v.Passed.000056, =, "N")
+				f.Intrinsic.Control.CallSub(safetyRadiationHoldAutomatic, passedOrder, v.Passed.000002)
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.quoteWonNoTransaction.End
+
+'Program.Sub..Start
+'v.Local.sSQL.Declare
+'f.Intrinsic.Control.Try
+'	f.Intrinsic.String.Build("select * from V_ORDER_HEADER where order_no = '{0}' and Quote != ''", v.Global.sOrderNo, v.Local.sSQL)
+'	f.ODBC.Connection!con.OpenCompanyConnection
+'		f.Data.DataTable.CreateFromSQL("quoteWonDT", "con", v.Local.sSQL)
+'			f.Intrinsic.Control.If(v.DataTable.quoteWonDT.RowCount, >, 0)
+'				f.Intrinsic.String.Build("Update ORDER_HEADER Set Way_Bill = '{0}' Where order_no = '{1}'  and Record_No = '  A'", v.Caller.User, v.Global.sOrderNo, v.Local.sSQL)
+'				f.ODBC.Connection!con.Execute(v.Local.sSQL)
+'			f.Intrinsic.Control.EndIf
+'		f.Data.DataTable.Close("quoteWonDT")
+'	f.ODBC.Connection!con.Close
+'f.Intrinsic.Control.Catch
+'	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+'f.Intrinsic.Control.EndTry
+'Program.Sub..End
+
+Program.Sub.postLineSave.Start
+v.Local.sSQL.Declare
+v.Local.sOrder.Declare
+v.Local.sPart.Declare
+v.Local.sLoc.Declare
+f.Intrinsic.Control.Try
+	v.Local.sLoc.Set(v.Passed.000074)
+	f.Intrinsic.String.LPad(v.Passed.000005, "0", 7, v.Local.sOrder)
+	f.Intrinsic.String.RPad(v.Passed.000071, " ", 17, v.Local.sPart)
+	f.Intrinsic.String.Build("{0}{1}", v.Local.sPart, v.Passed.0000072, v.Local.sPart)
+	
+	f.Intrinsic.String.Build("Select * from V_INVENTORY_MST3 where Part = '{0}' and Location = '{1}'", v.Local.sPart, v.Local.sLoc, v.Local.sSQL)
+	
+	'Closes ODBC connection, default to connection : "con"
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+
+	'Closes ODBC connection, default to connection : "con"
+	f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+		f.ODBC.Connection!con.Close
+	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!con.OpenCompanyConnection
+		f.Data.DataTable.CreateFromSQL("singlePartDT", "con", v.Local.sSQL)
+	f.ODBC.Connection!con.Close
+	
+	f.Intrinsic.Control.If(v.DataTable.singlePartDT.RowCount, =, 1)
+		
+		f.Intrinsic.Control.If(v.DataTable.singlePartDT(0).HM_FLAG!FieldValTrim, =, "Y")
+			'Exception, Need to look for a dynamic way to this.
+			f.Intrinsic.Control.If(v.DataTable.singlePartDT(0).Part!FieldValTrim, =, "4590")
+				f.Data.DataTable.Close("singlePartDT")
+				f.Intrinsic.Control.ExitSub
+			f.Intrinsic.Control.EndIf
+			
+			'Closes ODBC connection, default to connection : "con"
+'			f.Intrinsic.Control.If(v.ODBC!con.State, =, 1)
+'				f.ODBC.Connection!con.Close
+'			f.Intrinsic.Control.EndIf
+'			
+			f.ODBC.Connection!con.OpenCompanyConnection
+				f.Intrinsic.String.Build("Update Order_Header Set code_sort = '***HOLD***', way_bill = '{0}' Where Order_No = '{1}' and Record_no = '  A' and Record_Type = 'A'", v.Passed.000031, v.Global.sOrderNo, v.Local.sSQL)
+				f.ODBC.Connection!con.Execute(v.Local.sSQL)	
+			f.ODBC.Connection!con.Close
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.postLineSave.End
+
+Program.Sub.checkCreditLimit.Start
+
+f.Intrinsic.Control.Try
+	f.Intrinsic.String.LPad(v.Args.passedOrder, "0", 7, v.Global.sOrderNo)
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(ErrorMsg, CurrentSub, v.Ambient.CurrentSubroutine)
+f.Intrinsic.Control.EndTry
+Program.Sub.checkCreditLimit.End
